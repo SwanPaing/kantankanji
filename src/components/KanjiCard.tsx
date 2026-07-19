@@ -7,10 +7,9 @@ type KanjiCardProps = {
   onCardClick?: (kanji: KanjiCardItem) => void;
   selectedCharacters?: string[];
   onSelectionToggle?: (kanji: KanjiCardItem) => void;
-  showSelectionButton?: boolean;
 };
 
-const KanjiCard = ({ items, onCardClick, selectedCharacters = [], onSelectionToggle, showSelectionButton = false }: KanjiCardProps) => {
+const KanjiCard = ({ items, onCardClick, selectedCharacters = [], onSelectionToggle }: KanjiCardProps) => {
   const levelColors: Record<string, string> = {
     N5: 'bg-green-100 text-green-800',
     N4: 'bg-blue-100 text-blue-800',
