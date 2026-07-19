@@ -182,7 +182,6 @@ export default function Home() {
             onCardClick={(kanji) => setSelectedKanji(kanji)}
             selectedCharacters={selectedForQuiz}
             onSelectionToggle={handleToggleCustomSelection}
-            showSelectionButton
           />
         </div>
 
