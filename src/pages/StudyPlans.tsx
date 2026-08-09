@@ -10,12 +10,9 @@ import {
   faChevronRight,
   faCircleCheck,
   faArrowLeft,
-<<<<<<< HEAD
   faSquareCheck,
   faSquare,
   faLayerGroup,
-=======
->>>>>>> 5db5a9378ee347600fc6d98b99866292a8ce424d
 } from "@fortawesome/free-solid-svg-icons";
 
 // ---------------------------------------------------------------------------
@@ -47,14 +44,11 @@ type SessionRef = {
   quiz?: boolean;
 };
 
-<<<<<<< HEAD
 type MultiQuizRef = {
   items: KanjiItem[];
   sessionCount: number;
 };
 
-=======
->>>>>>> 5db5a9378ee347600fc6d98b99866292a8ce424d
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -165,13 +159,10 @@ const StudyPlans = () => {
     () => getCompletedSessions()
   );
   const [detailKanji, setDetailKanji] = useState<KanjiItem | null>(null);
-<<<<<<< HEAD
   const [selectedSessions, setSelectedSessions] = useState<Map<string, Set<number>>>(
     () => new Map()
   );
   const [multiQuiz, setMultiQuiz] = useState<MultiQuizRef | null>(null);
-=======
->>>>>>> 5db5a9378ee347600fc6d98b99866292a8ce424d
 
   // Precompute sessions for every level
   const sessionsByLevel = useMemo(() => {
@@ -182,7 +173,6 @@ const StudyPlans = () => {
     return map;
   }, []);
 
-<<<<<<< HEAD
   const totalSelectedSessions = useMemo(() => {
     let count = 0;
     for (const set of selectedSessions.values()) count += set.size;
@@ -238,8 +228,6 @@ const StudyPlans = () => {
 
   const handleClearSelection = () => setSelectedSessions(new Map());
 
-=======
->>>>>>> 5db5a9378ee347600fc6d98b99866292a8ce424d
   const toggleLevel = (id: string) => {
     setExpandedLevels((prev) => {
       const next = new Set(prev);
@@ -265,7 +253,6 @@ const StudyPlans = () => {
     ? sessionsByLevel[activeSession.levelId]?.[activeSession.sessionIndex] ?? []
     : [];
 
-<<<<<<< HEAD
   // ---- Multi-session quiz view ----
   if (multiQuiz) {
     return (
@@ -291,9 +278,6 @@ const StudyPlans = () => {
   }
 
   // ---- Single-session quiz view ----
-=======
-  // ---- Quiz view ----
->>>>>>> 5db5a9378ee347600fc6d98b99866292a8ce424d
   if (activeSession?.quiz && currentLevel) {
     return (
       <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
@@ -507,7 +491,6 @@ const StudyPlans = () => {
                   {sessions.map((sessionItems, idx) => {
                     const sessionKey = `${level.id}-${idx}`;
                     const isDone = completedSessions.has(sessionKey);
-<<<<<<< HEAD
                     const isSelected = selectedSessions.get(level.id)?.has(idx) ?? false;
 
                     return (
@@ -582,64 +565,6 @@ const StudyPlans = () => {
                           </p>
                         </button>
                       </div>
-=======
-
-                    return (
-                      <button
-                        key={sessionKey}
-                        type="button"
-                        onClick={() =>
-                          setActiveSession({
-                            levelId: level.id,
-                            sessionIndex: idx,
-                          })
-                        }
-                        className={`rounded-xl border p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md ${isDone
-                            ? "border-emerald-200 bg-emerald-50/50"
-                            : `${level.border} bg-gradient-to-r ${level.color}`
-                          }`}
-                      >
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center gap-2">
-                            <FontAwesomeIcon
-                              icon={faBook}
-                              className={`text-sm ${isDone ? "text-emerald-600" : level.accent}`}
-                            />
-                            <span className="font-semibold text-slate-900">
-                              Session {idx + 1}
-                            </span>
-                          </div>
-                          {isDone && (
-                            <FontAwesomeIcon
-                              icon={faCircleCheck}
-                              className="text-emerald-500"
-                            />
-                          )}
-                        </div>
-
-                        {/* Preview kanji */}
-                        <div className="flex flex-wrap gap-1.5">
-                          {sessionItems.slice(0, 5).map((k) => (
-                            <span
-                              key={k.character}
-                              className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center text-base sm:text-lg text-black font-semibold bg-white/70 rounded-lg shadow-sm"
-                              style={{ fontFamily: "var(--font-display)" }}
-                            >
-                              {k.character}
-                            </span>
-                          ))}
-                          {sessionItems.length > 5 && (
-                            <span className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center text-xs text-slate-500 bg-white/50 rounded-lg">
-                              +{sessionItems.length - 5}
-                            </span>
-                          )}
-                        </div>
-
-                        <p className="mt-2 text-xs text-slate-500">
-                          {sessionItems.length} kanji
-                        </p>
-                      </button>
->>>>>>> 5db5a9378ee347600fc6d98b99866292a8ce424d
                     );
                   })}
                 </div>
@@ -648,7 +573,6 @@ const StudyPlans = () => {
           );
         })}
       </div>
-<<<<<<< HEAD
 
       {/* Sticky action bar */}
       {totalSelectedSessions > 0 && (
@@ -680,8 +604,6 @@ const StudyPlans = () => {
           </button>
         </div>
       )}
-=======
->>>>>>> 5db5a9378ee347600fc6d98b99866292a8ce424d
     </div>
   );
 };
