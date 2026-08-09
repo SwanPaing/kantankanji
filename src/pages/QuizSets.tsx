@@ -245,38 +245,7 @@ const QuizSets = () => {
                       </div>
                     </div>
                   </div>
-                  // <div key={set.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  //   <div className="flex flex-col gap-3">
-                  //     <div className="flex items-center justify-between gap-3">
-                  //       <div>
-                  //         <p className="font-semibold text-slate-900">{set.name}</p>
-                  //         <p className="text-sm text-slate-600">{set.subtitle}</p>
-                  //       </div>
-                  //       <button
-                  //         type="button"
-                  //         onClick={() => handleDeleteSavedSet(set.id)}
-                  //         className="rounded-full border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-100"
-                  //       >
-                  //         Delete
-                  //       </button>
-                  //     </div>
-                  //     <p className="text-sm text-slate-600">{set.description}</p>
-                  //     <div className="flex flex-wrap gap-2">
-                  //       {set.items.slice(0, 4).map((item) => (
-                  //         <span key={item.character} className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-white text-2xl font-semibold text-slate-900 shadow-sm">
-                  //           {item.character}
-                  //         </span>
-                  //       ))}
-                  //     </div>
-                  //     <button
-                  //       type="button"
-                  //       onClick={() => setActiveSet(set)}
-                  //       className="mt-2 rounded-xl bg-[#464c91] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#3c437d]"
-                  //     >
-                  //       Start Quiz
-                  //     </button>
-                  //   </div>
-                  // </div>
+
                 ))}
               </div>
             </div>

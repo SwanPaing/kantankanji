@@ -10,6 +10,9 @@ import {
   faChevronRight,
   faCircleCheck,
   faArrowLeft,
+  faSquareCheck,
+  faSquare,
+  faLayerGroup,
 } from "@fortawesome/free-solid-svg-icons";
 
 // ---------------------------------------------------------------------------
@@ -39,6 +42,11 @@ type SessionRef = {
   levelId: string;
   sessionIndex: number;
   quiz?: boolean;
+};
+
+type MultiQuizRef = {
+  items: KanjiItem[];
+  sessionCount: number;
 };
 
 // ---------------------------------------------------------------------------
@@ -151,6 +159,10 @@ const StudyPlans = () => {
     () => getCompletedSessions()
   );
   const [detailKanji, setDetailKanji] = useState<KanjiItem | null>(null);
+  const [selectedSessions, setSelectedSessions] = useState<Map<string, Set<number>>>(
+    () => new Map()
+  );
+  const [multiQuiz, setMultiQuiz] = useState<MultiQuizRef | null>(null);
 
   // Precompute sessions for every level
   const sessionsByLevel = useMemo(() => {
@@ -160,6 +172,61 @@ const StudyPlans = () => {
     }
     return map;
   }, []);
+
+  const totalSelectedSessions = useMemo(() => {
+    let count = 0;
+    for (const set of selectedSessions.values()) count += set.size;
+    return count;
+  }, [selectedSessions]);
+
+  const totalSelectedKanji = useMemo(() => {
+    let count = 0;
+    for (const [levelId, indices] of selectedSessions.entries()) {
+      const sessions = sessionsByLevel[levelId] ?? [];
+      for (const idx of indices) {
+        count += sessions[idx]?.length ?? 0;
+      }
+    }
+    return count;
+  }, [selectedSessions, sessionsByLevel]);
+
+  const toggleSessionSelection = (levelId: string, sessionIndex: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedSessions((prev) => {
+      const next = new Map(prev);
+      const levelSet = new Set(next.get(levelId) ?? []);
+      if (levelSet.has(sessionIndex)) {
+        levelSet.delete(sessionIndex);
+      } else {
+        levelSet.add(sessionIndex);
+      }
+      if (levelSet.size === 0) {
+        next.delete(levelId);
+      } else {
+        next.set(levelId, levelSet);
+      }
+      return next;
+    });
+  };
+
+  const handleStartMultiQuiz = () => {
+    const combinedItems: KanjiItem[] = [];
+    const seen = new Set<string>();
+    for (const [levelId, indices] of selectedSessions.entries()) {
+      const sessions = sessionsByLevel[levelId] ?? [];
+      for (const idx of indices) {
+        for (const item of sessions[idx] ?? []) {
+          if (!seen.has(item.character)) {
+            seen.add(item.character);
+            combinedItems.push(item);
+          }
+        }
+      }
+    }
+    setMultiQuiz({ items: combinedItems, sessionCount: totalSelectedSessions });
+  };
+
+  const handleClearSelection = () => setSelectedSessions(new Map());
 
   const toggleLevel = (id: string) => {
     setExpandedLevels((prev) => {
@@ -186,7 +253,31 @@ const StudyPlans = () => {
     ? sessionsByLevel[activeSession.levelId]?.[activeSession.sessionIndex] ?? []
     : [];
 
-  // ---- Quiz view ----
+  // ---- Multi-session quiz view ----
+  if (multiQuiz) {
+    return (
+      <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
+        <div className="space-y-4">
+          <button
+            type="button"
+            onClick={() => setMultiQuiz(null)}
+            className="rounded-full border border-slate-200 bg-white px-4 py-2 text-[18px] font-medium text-black transition hover:border-[#464c91] hover:bg-[#464c91] hover:text-white"
+          >
+            <FontAwesomeIcon icon={faArrowLeft} className="mr-2" />
+            Back to study plans
+          </button>
+          <Quiz
+            title="Custom Study Quiz"
+            subtitle={`${multiQuiz.items.length} kanji from ${multiQuiz.sessionCount} session${multiQuiz.sessionCount !== 1 ? "s" : ""}`}
+            items={multiQuiz.items}
+            onBack={() => setMultiQuiz(null)}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // ---- Single-session quiz view ----
   if (activeSession?.quiz && currentLevel) {
     return (
       <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
@@ -400,62 +491,80 @@ const StudyPlans = () => {
                   {sessions.map((sessionItems, idx) => {
                     const sessionKey = `${level.id}-${idx}`;
                     const isDone = completedSessions.has(sessionKey);
+                    const isSelected = selectedSessions.get(level.id)?.has(idx) ?? false;
 
                     return (
-                      <button
+                      <div
                         key={sessionKey}
-                        type="button"
-                        onClick={() =>
-                          setActiveSession({
-                            levelId: level.id,
-                            sessionIndex: idx,
-                          })
-                        }
-                        className={`rounded-xl border p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md ${isDone
-                            ? "border-emerald-200 bg-emerald-50/50"
-                            : `${level.border} bg-gradient-to-r ${level.color}`
-                          }`}
+                        className={`relative rounded-xl border p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md ${level.border} bg-gradient-to-r ${level.color} ${
+                          isSelected ? "ring-2 ring-[#464c91] ring-offset-1" : ""
+                        }`}
                       >
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center gap-2">
-                            <FontAwesomeIcon
-                              icon={faBook}
-                              className={`text-sm ${isDone ? "text-emerald-600" : level.accent}`}
-                            />
-                            <span className="font-semibold text-slate-900">
-                              Session {idx + 1}
-                            </span>
+                        {/* Checkbox toggle */}
+                        <button
+                          type="button"
+                          aria-label={isSelected ? "Deselect session" : "Select session for quiz"}
+                          onClick={(e) => toggleSessionSelection(level.id, idx, e)}
+                          className="absolute top-3 right-3 text-lg text-[#464c91] hover:scale-110 transition-transform z-10"
+                        >
+                          <FontAwesomeIcon
+                            icon={isSelected ? faSquareCheck : faSquare}
+                            className={isSelected ? "text-[#464c91]" : "text-slate-300"}
+                          />
+                        </button>
+
+                        {/* Card body — navigates to session detail */}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setActiveSession({
+                              levelId: level.id,
+                              sessionIndex: idx,
+                            })
+                          }
+                          className="w-full text-left"
+                        >
+                          <div className="flex items-center justify-between mb-3 pr-7">
+                            <div className="flex items-center gap-2">
+                              <FontAwesomeIcon
+                                icon={faBook}
+                                className={`text-sm ${level.accent}`}
+                              />
+                              <span className="font-semibold text-slate-900">
+                                Session {idx + 1}
+                              </span>
+                            </div>
+                            {isDone && (
+                              <FontAwesomeIcon
+                                icon={faCircleCheck}
+                                className="text-emerald-500"
+                              />
+                            )}
                           </div>
-                          {isDone && (
-                            <FontAwesomeIcon
-                              icon={faCircleCheck}
-                              className="text-emerald-500"
-                            />
-                          )}
-                        </div>
 
-                        {/* Preview kanji */}
-                        <div className="flex flex-wrap gap-1.5">
-                          {sessionItems.slice(0, 5).map((k) => (
-                            <span
-                              key={k.character}
-                              className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center text-base sm:text-lg text-black font-semibold bg-white/70 rounded-lg shadow-sm"
-                              style={{ fontFamily: "var(--font-display)" }}
-                            >
-                              {k.character}
-                            </span>
-                          ))}
-                          {sessionItems.length > 5 && (
-                            <span className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center text-xs text-slate-500 bg-white/50 rounded-lg">
-                              +{sessionItems.length - 5}
-                            </span>
-                          )}
-                        </div>
+                          {/* Preview kanji */}
+                          <div className="flex flex-wrap gap-1.5">
+                            {sessionItems.slice(0, 5).map((k) => (
+                              <span
+                                key={k.character}
+                                className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center text-base sm:text-lg text-black font-semibold bg-white/70 rounded-lg shadow-sm"
+                                style={{ fontFamily: "var(--font-display)" }}
+                              >
+                                {k.character}
+                              </span>
+                            ))}
+                            {sessionItems.length > 5 && (
+                              <span className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center text-xs text-slate-500 bg-white/50 rounded-lg">
+                                +{sessionItems.length - 5}
+                              </span>
+                            )}
+                          </div>
 
-                        <p className="mt-2 text-xs text-slate-500">
-                          {sessionItems.length} kanji
-                        </p>
-                      </button>
+                          <p className="mt-2 text-xs text-slate-500">
+                            {sessionItems.length} kanji
+                          </p>
+                        </button>
+                      </div>
                     );
                   })}
                 </div>
@@ -464,6 +573,37 @@ const StudyPlans = () => {
           );
         })}
       </div>
+
+      {/* Sticky action bar */}
+      {totalSelectedSessions > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 rounded-2xl border border-[#464c91]/20 bg-[#464c91] px-5 py-3 shadow-2xl shadow-[#464c91]/30 text-white">
+          <div className="flex items-center gap-2">
+            <FontAwesomeIcon icon={faLayerGroup} className="text-white/80" />
+            <span className="text-sm font-semibold">
+              {totalSelectedSessions} session{totalSelectedSessions !== 1 ? "s" : ""}
+            </span>
+            <span className="text-white/60 text-xs">·</span>
+            <span className="text-sm text-white/80">{totalSelectedKanji} kanji</span>
+          </div>
+          <div className="w-px h-5 bg-white/30" />
+          <button
+            type="button"
+            onClick={handleStartMultiQuiz}
+            className="flex items-center gap-2 rounded-xl bg-white px-4 py-1.5 text-sm font-semibold text-[#464c91] transition hover:bg-slate-100"
+          >
+            <FontAwesomeIcon icon={faBoltLightning} />
+            Start Quiz
+          </button>
+          <button
+            type="button"
+            onClick={handleClearSelection}
+            className="text-xs text-white/60 hover:text-white transition"
+            aria-label="Clear selection"
+          >
+            ✕
+          </button>
+        </div>
+      )}
     </div>
   );
 };

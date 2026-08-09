@@ -23,28 +23,64 @@ export default function Home() {
   const navigate = useNavigate();
 
   const filteredKanji = useMemo(() => {
-    const normalizedQuery = searchTerm.trim().toLowerCase().replace(/[\s\-_.,/()]/g, "");
+    const rawQuery = searchTerm.trim();
+    if (!rawQuery) {
+      return ALL_KANJI.filter((item) => {
+        const matchesLevel = selectedLevels.length === 0 || selectedLevels.includes(item.jlpt_level ?? "None");
+        const matchesGrade = selectedGrades.length === 0 || selectedGrades.includes(item.grade ?? "None");
+        return matchesLevel && matchesGrade;
+      });
+    }
+
+    // Convert katakana to hiragana for consistent kana comparison
+    const toHiragana = (str: string) =>
+      str.replace(/[\u30A1-\u30F6]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0x60));
+
+    const normalizedQuery = toHiragana(rawQuery.toLowerCase()).replace(/[\s\-_.,/()]/g, "");
+    const queryLower = rawQuery.toLowerCase();
+
+    // Prefix matching only kicks in at 3+ characters to avoid flooding results
+    // with short queries like "h" → horse, "t" → thin, "p" → profit/prefecture
+    const usePrefix = normalizedQuery.length >= 3;
+
+    // Match a word exactly, or by prefix if query is long enough
+    const matchesWord = (w: string) =>
+      usePrefix ? w.startsWith(queryLower) : w === queryLower;
+
+    // True if the query matches from the start of any word in `text`
+    const matchesAnyWord = (text: string) => {
+      if (!text) return false;
+      return text.toLowerCase().split(/[\s\-_.,/()]+/).some(matchesWord);
+    };
 
     return ALL_KANJI.filter((item) => {
       const matchesLevel = selectedLevels.length === 0 || selectedLevels.includes(item.jlpt_level ?? "None");
       const matchesGrade = selectedGrades.length === 0 || selectedGrades.includes(item.grade ?? "None");
 
-      if (!normalizedQuery) {
-        return matchesLevel && matchesGrade;
-      }
+      // Exact kanji character match always works regardless of length
+      if (item.character === rawQuery) return matchesLevel && matchesGrade;
 
-      const searchableFields = [
-        item.character,
-        ...(item.meanings ?? []),
-        ...(item.onyomi ?? []),
-        ...(item.kunyomi ?? []),
-      ];
+      // Meanings: word-start match (prefix only for 3+ chars)
+      const meaningsMatch = (item.meanings ?? []).some((meaning) => matchesAnyWord(meaning));
 
-      const searchableText = searchableFields
-        .map((value) => value.toLowerCase().replace(/[\s\-_.,/()]/g, ""))
-        .join(" ");
+      // Readings: prefix match on normalized kana (prefix only for 3+ chars)
+      const readingsMatch = [...(item.onyomi ?? []), ...(item.kunyomi ?? [])].some((reading) => {
+        const normalizedReading = toHiragana(reading.toLowerCase()).replace(/[\s\-_.,/()]/g, "");
+        return usePrefix
+          ? normalizedReading.startsWith(normalizedQuery)
+          : normalizedReading === normalizedQuery;
+      });
 
-      return matchesLevel && matchesGrade && searchableText.includes(normalizedQuery);
+      // Example words: match by kanji character or kana reading prefix only.
+      // NOT searching by example meaning to avoid false positives.
+      const exampleMatch = (item.example_words ?? []).some((ex: { word: string; reading: string; meaning: string }) => {
+        if (ex.word.includes(rawQuery)) return true;
+        if (!usePrefix) return false;
+        const normalizedExReading = toHiragana(ex.reading.toLowerCase()).replace(/[\s\-_.,/()]/g, "");
+        return normalizedExReading.startsWith(normalizedQuery);
+      });
+
+      return matchesLevel && matchesGrade && (meaningsMatch || readingsMatch || exampleMatch);
     });
   }, [searchTerm, selectedGrades, selectedLevels]);
 
@@ -80,7 +116,7 @@ export default function Home() {
         <h1 className="mb-4 text-4xl font-bold text-black">Browse Kanji</h1>
         <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start">
           <div className="relative flex-1">
-            <FontAwesomeIcon icon={faMagnifyingGlass} className="absolute left-2.5 top-[38%] -translate-y-1/2 text-[#464c91]" />
+            <FontAwesomeIcon icon={faMagnifyingGlass} className="absolute left-2.5 top-[50%] -translate-y-1/2 text-[#464c91]" />
             <input
               type="text"
               value={searchTerm}
@@ -101,10 +137,13 @@ export default function Home() {
               <span>Filter</span>
               {hasActiveFilters ? <span className="rounded-full bg-[#464c91] px-2 py-0.5 text-xs text-white">{selectedLevels.length + selectedGrades.length}</span> : null}
             </button>
-
-            {isFilterOpen ? (
-              <div className="absolute right-0 z-10 mt-2 w-80 rounded-lg border border-gray-200 bg-white p-4 shadow-lg">
-                <div className="mb-4">
+            
+            </div>
+          </div>  
+        </div>
+        {isFilterOpen ? (
+              <div className="mb-4  z-10 rounded-lg border border-gray-200 bg-white px-4 py-2 shadow-sm">
+                <div className="mb-2">
                   <h2 className="mb-2 text-sm font-semibold text-gray-700">JLPT Levels</h2>
                   <div className="flex flex-wrap gap-2">
                     {JLPT_LEVELS.map((level) => {
@@ -123,7 +162,7 @@ export default function Home() {
                   </div>
                 </div>
 
-                <div className="mb-4">
+                <div className="mb-2">
                   <h2 className="mb-2 text-sm font-semibold text-gray-700">School Grades</h2>
                   <div className="flex flex-wrap gap-2">
                     {GRADES.map((grade) => {
@@ -142,30 +181,21 @@ export default function Home() {
                   </div>
                 </div>
 
-                <div className="flex justify-end gap-2">
+                <div className="flex  gap-2">
                   <button
                     type="button"
                     onClick={() => {
                       setSelectedLevels([]);
                       setSelectedGrades([]);
                     }}
-                    className="rounded-md px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100"
+                    className="rounded-md px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 hover:text-red-400"
                   >
                     Clear
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsFilterOpen(false)}
-                    className="rounded-md bg-[#464c91] px-3 py-1.5 text-sm text-white hover:bg-[#3c437d]"
-                  >
-                    Done
-                  </button>
+                  
                 </div>
               </div>
             ) : null}
-            </div>
-          </div>
-        </div>
 
         <div className="mb-4 rounded-xl border border-[#464c91]/20 bg-white p-4 shadow-sm">
           <div className="mb-3 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -182,7 +212,6 @@ export default function Home() {
             onCardClick={(kanji) => setSelectedKanji(kanji)}
             selectedCharacters={selectedForQuiz}
             onSelectionToggle={handleToggleCustomSelection}
-            showSelectionButton
           />
         </div>
 

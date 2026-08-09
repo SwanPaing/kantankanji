@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 
 export type QuizItemSource = {
   character: string;
@@ -142,7 +143,7 @@ const buildQuestions = (items: QuizItemSource[], settings: QuizSettings, quizVer
             question: vocab.word,
             options: buildChoices(vocab.reading, allVocabReadingPool),
             answer: vocab.reading,
-            explanation: `${vocab.word} is read as ${vocab.reading}.`,
+            explanation: `${vocab.word} (${vocab.meaning}) is read as ${vocab.reading}.`,
             type: "vocabulary",
             kind: "reading",
           });
@@ -169,6 +170,18 @@ const Quiz = ({ title, subtitle, items, onBack }: QuizProps) => {
   const [score, setScore] = useState(0);
   const [isFinished, setIsFinished] = useState(false);
 
+  const [userAnswers, setUserAnswers] = useState<Record<number, string>>({});
+  const [filterMode, setFilterMode] = useState<"all" | "incorrect" | "correct">("all");
+  const [isReviewExpanded, setIsReviewExpanded] = useState(false);
+  const [expandedQuestionIds, setExpandedQuestionIds] = useState<Record<string, boolean>>({});
+
+  const toggleQuestionExpanded = (id: string) => {
+    setExpandedQuestionIds((previous) => ({
+      ...previous,
+      [id]: !previous[id],
+    }));
+  };
+
   const questions = useMemo(() => buildQuestions(items, settings, quizVersion), [items, settings, quizVersion]);
   const currentQuestion = questions[selectedIndex];
 
@@ -177,9 +190,22 @@ const Quiz = ({ title, subtitle, items, onBack }: QuizProps) => {
     return ((selectedIndex + (selectedAnswer ? 1 : 0)) / questions.length) * 100;
   }, [questions.length, selectedIndex, selectedAnswer]);
 
+  const filteredQuestions = useMemo(() => {
+    return questions
+      .map((q, index) => ({ q, originalIndex: index }))
+      .filter(({ q, originalIndex }) => {
+        const userAnswer = userAnswers[originalIndex];
+        const isCorrect = userAnswer === q.answer;
+        if (filterMode === "correct") return isCorrect;
+        if (filterMode === "incorrect") return !isCorrect;
+        return true;
+      });
+  }, [questions, userAnswers, filterMode]);
+
   const handleAnswer = (option: string) => {
     if (selectedAnswer || !currentQuestion) return;
     setSelectedAnswer(option);
+    setUserAnswers((previousAnswers) => ({ ...previousAnswers, [selectedIndex]: option }));
     if (option === currentQuestion.answer) {
       setScore((previousScore) => previousScore + 1);
     }
@@ -191,6 +217,10 @@ const Quiz = ({ title, subtitle, items, onBack }: QuizProps) => {
     setSelectedIndex(0);
     setSelectedAnswer(null);
     setScore(0);
+    setUserAnswers({});
+    setFilterMode("all");
+    setIsReviewExpanded(false);
+    setExpandedQuestionIds({});
     setQuizVersion((previousVersion) => previousVersion + 1);
   };
 
@@ -212,6 +242,10 @@ const Quiz = ({ title, subtitle, items, onBack }: QuizProps) => {
     setSelectedIndex(0);
     setSelectedAnswer(null);
     setScore(0);
+    setUserAnswers({});
+    setFilterMode("all");
+    setIsReviewExpanded(false);
+    setExpandedQuestionIds({});
     setQuizVersion((previousVersion) => previousVersion + 1);
   };
 
@@ -350,6 +384,216 @@ const Quiz = ({ title, subtitle, items, onBack }: QuizProps) => {
           >
             Back to Quiz Sets
           </button>
+        </div>
+
+        <div className="mt-10 border-t border-slate-200 pt-8">
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+            {/* Header Card matching StudyPlans level card */}
+            <button
+              type="button"
+              onClick={() => setIsReviewExpanded((prev) => !prev)}
+              className="w-full bg-slate-50 p-5 text-left transition hover:bg-slate-100/80 cursor-pointer"
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-full bg-[#464c91]/10 text-[#464c91] shrink-0">
+                    {isReviewExpanded ? (
+                      <ChevronDown className="h-5 w-5" />
+                    ) : (
+                      <ChevronRight className="h-5 w-5" />
+                    )}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[13px] font-bold px-2.5 py-0.5 rounded-full bg-[#464c91] text-white">
+                        REVIEW
+                      </span>
+                      <span className="text-[14px] font-semibold text-[#464c91]">
+                        Quiz Review
+                      </span>
+                    </div>
+                    <h3 className="mt-1 text-xl font-semibold text-slate-900">
+                      Review Questions & Answers
+                    </h3>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 sm:gap-3 text-left sm:text-right ml-11 sm:ml-0">
+                  <span className="text-sm font-medium text-slate-600">
+                    {questions.length} questions · {percentage}% accuracy
+                  </span>
+                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-200 text-slate-700">
+                    {isReviewExpanded ? "Hide" : "Show"}
+                  </span>
+                </div>
+              </div>
+            </button>
+
+            {/* Content visible when level/review card is expanded */}
+            {isReviewExpanded && (
+              <div className="p-4 sm:p-5 bg-slate-50/50 space-y-4 border-t border-slate-200">
+                {/* Filter pills */}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white p-3 rounded-xl border border-slate-200">
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                    Filter Questions:
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setFilterMode("all")}
+                      className={`rounded-full px-4 py-1.5 text-xs font-semibold transition ${
+                        filterMode === "all"
+                          ? "bg-[#464c91] text-white shadow-sm"
+                          : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                      }`}
+                    >
+                      All ({questions.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFilterMode("incorrect")}
+                      className={`rounded-full px-4 py-1.5 text-xs font-semibold transition ${
+                        filterMode === "incorrect"
+                          ? "bg-rose-600 text-white shadow-sm"
+                          : "bg-rose-50 text-rose-700 hover:bg-rose-100"
+                      }`}
+                    >
+                      Incorrect ({missedCount})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFilterMode("correct")}
+                      className={`rounded-full px-4 py-1.5 text-xs font-semibold transition ${
+                        filterMode === "correct"
+                          ? "bg-emerald-600 text-white shadow-sm"
+                          : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                      }`}
+                    >
+                      Correct ({correctCount})
+                    </button>
+                  </div>
+                </div>
+
+                {/* Question items styled like StudyPlans session cards */}
+                <div className="space-y-3">
+                  {filteredQuestions.map(({ q, originalIndex }) => {
+                    const userAnswer = userAnswers[originalIndex];
+                    const isUserCorrect = userAnswer === q.answer;
+                    const isQuestionExpanded = Boolean(expandedQuestionIds[q.id]);
+
+                    return (
+                      <div
+                        key={q.id}
+                        className={`rounded-xl border bg-white transition-all shadow-xs ${
+                          isUserCorrect
+                            ? "border-emerald-200"
+                            : "border-rose-200"
+                        }`}
+                      >
+                        {/* Question Card Header */}
+                        <button
+                          type="button"
+                          onClick={() => toggleQuestionExpanded(q.id)}
+                          className="w-full flex items-center justify-between p-4 text-left cursor-pointer select-none rounded-xl hover:bg-slate-50/80 transition"
+                        >
+                          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                              #{originalIndex + 1}
+                            </span>
+                            <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
+                              {q.type === "kanji" ? "Kanji" : "Vocabulary"}
+                            </span>
+                            <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
+                              {q.kind === "meaning" ? "Meaning" : "Reading"}
+                            </span>
+                            <span className="font-bold text-slate-900 text-lg sm:text-xl ml-1" style={{ fontFamily: "var(--font-display)" }}>
+                              {q.question}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-3">
+                            <span
+                              className={`inline-flex items-center gap-1 rounded-full px-3 py-0.5 text-xs font-semibold ${
+                                isUserCorrect
+                                  ? "bg-emerald-100 text-emerald-800"
+                                  : "bg-rose-100 text-rose-800"
+                              }`}
+                            >
+                              {isUserCorrect ? "✓ Correct" : "✕ Incorrect"}
+                            </span>
+                            <ChevronDown
+                              className={`h-5 w-5 text-slate-400 transition-transform duration-200 ${
+                                isQuestionExpanded ? "rotate-180 text-[#464c91]" : ""
+                              }`}
+                            />
+                          </div>
+                        </button>
+
+                        {/* Question Card Body */}
+                        {isQuestionExpanded && (
+                          <div className="border-t border-slate-100 p-4 sm:p-5 bg-slate-50/30">
+                            <div>
+                              <p className="text-xs font-medium uppercase tracking-wider text-[#464c91]">{q.prompt}</p>
+                              <p className="mt-1 text-3xl font-semibold text-slate-900">{q.question}</p>
+                            </div>
+
+                            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                              {q.options.map((option) => {
+                                const isSelected = userAnswer === option;
+                                const isCorrectOption = option === q.answer;
+
+                                let optionBoxClass = "border-slate-200 bg-white text-slate-700";
+                                if (isCorrectOption) {
+                                  optionBoxClass = "border-emerald-400 bg-emerald-50 text-emerald-800 font-medium";
+                                } else if (isSelected && !isCorrectOption) {
+                                  optionBoxClass = "border-rose-400 bg-rose-50 text-rose-800 font-medium line-through";
+                                }
+
+                                return (
+                                  <div
+                                    key={option}
+                                    className={`flex items-center justify-between rounded-xl border px-3.5 py-2.5 text-sm ${optionBoxClass}`}
+                                  >
+                                    <span>{option}</span>
+                                    {isSelected && isCorrectOption && (
+                                      <span className="rounded-md bg-emerald-200 px-2 py-0.5 text-xs font-semibold text-emerald-800">
+                                        Your Answer ✓
+                                      </span>
+                                    )}
+                                    {isSelected && !isCorrectOption && (
+                                      <span className="rounded-md bg-rose-200 px-2 py-0.5 text-xs font-semibold text-rose-800">
+                                        Your Choice ✕
+                                      </span>
+                                    )}
+                                    {!isSelected && isCorrectOption && (
+                                      <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">
+                                        Correct Answer
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                            <div className="mt-4 rounded-xl border border-slate-200 bg-white p-3.5 text-sm text-slate-600">
+                              <span className="font-semibold text-slate-800">Explanation: </span>
+                              {q.explanation}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {filteredQuestions.length === 0 && (
+                    <div className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
+                      No questions found for this filter mode.
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     );

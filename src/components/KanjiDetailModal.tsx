@@ -55,7 +55,7 @@ export default function KanjiDetailModal({ kanji, onClose }: KanjiDetailModalPro
         
         <div className="px-6 py-6 max-h-[80vh] overflow-y-auto">
             <div className="flex gap-10 ">
-              <div className="flex flex-col items-center gap-3 flex-shrink-0">
+              <div className="flex flex-col items-center gap-3 shrink-0">
                 <span
                   className=" text-8xl font-black leading-none"
                   style={{ fontFamily: 'var(--font-display)' }}
