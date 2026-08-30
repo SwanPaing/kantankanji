@@ -108,56 +108,6 @@ const getReadingPattern = (r: string): ReadingPattern => {
   };
 };
 
-const scoreReadingSimilarity = (targetPattern: ReadingPattern, target: string, candidate: string): number => {
-  if (candidate.toLowerCase() === target.toLowerCase()) return -99999;
-  const candPattern = getReadingPattern(candidate);
-
-  // Hard requirement 1: must match Katakana vs Hiragana
-  if (targetPattern.isKatakana !== candPattern.isKatakana) {
-    return -10000;
-  }
-
-  // Hard requirement 2: must match special character layout exactly
-  if (targetPattern.isPrefixHyphen !== candPattern.isPrefixHyphen) {
-    return -10000;
-  }
-  if (targetPattern.isSuffixHyphen !== candPattern.isSuffixHyphen) {
-    return -10000;
-  }
-  if (targetPattern.hasMidHyphen !== candPattern.hasMidHyphen) {
-    return -10000;
-  }
-  if (targetPattern.hasDot !== candPattern.hasDot) {
-    return -10000;
-  }
-
-  let score = 1000;
-
-  // Compare okurigana suffix (e.g. -る vs -る, -い vs -い, .つ vs .つ)
-  if (targetPattern.hasMidHyphen || targetPattern.hasDot) {
-    if (targetPattern.okuriganaSuffix && candPattern.okuriganaSuffix) {
-      if (targetPattern.okuriganaSuffix === candPattern.okuriganaSuffix) {
-        score += 800;
-      } else if (
-        targetPattern.okuriganaSuffix[targetPattern.okuriganaSuffix.length - 1] ===
-        candPattern.okuriganaSuffix[candPattern.okuriganaSuffix.length - 1]
-      ) {
-        score += 400;
-      }
-    }
-  }
-
-  // Same last character / coda (e.g. -ん, -う, -つ, etc.)
-  if (targetPattern.lastChar && targetPattern.lastChar === candPattern.lastChar) {
-    score += 250;
-  }
-
-  // Length difference penalty
-  const lenDiff = Math.abs(targetPattern.cleanLength - candPattern.cleanLength);
-  score -= lenDiff * 100;
-
-  return score;
-};
 
 const KUNYOMI_ROOTS = [
   "あ", "い", "う", "え", "お",
