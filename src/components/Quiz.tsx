@@ -66,47 +66,6 @@ const shuffle = <T,>(items: T[]) => [...items].sort(() => Math.random() - 0.5);
 // Script detection helpers
 const isKatakana = (s: string) => /^[\u30A0-\u30FF\u30FC\s]+$/.test(s);
 
-type ReadingPattern = {
-  isKatakana: boolean;
-  isPrefixHyphen: boolean; // e.g. -び
-  isSuffixHyphen: boolean; // e.g. ひと-
-  hasMidHyphen: boolean;   // e.g. た-べる
-  hasDot: boolean;         // e.g. ひと.つ
-  okuriganaSuffix: string; // e.g. 'べる', 'つ', 'い'
-  lastChar: string;
-  cleanLength: number;
-};
-
-const getReadingPattern = (r: string): ReadingPattern => {
-  const isKat = isKatakana(r);
-  const isPrefixHyphen = r.startsWith("-");
-  const isSuffixHyphen = r.endsWith("-");
-  const hasMidHyphen = !isPrefixHyphen && !isSuffixHyphen && r.includes("-");
-  const hasDot = r.includes(".");
-
-  let okuriganaSuffix = "";
-  if (hasMidHyphen) {
-    const parts = r.split("-");
-    okuriganaSuffix = parts[parts.length - 1];
-  } else if (hasDot) {
-    const parts = r.split(".");
-    okuriganaSuffix = parts[parts.length - 1];
-  }
-
-  const clean = r.replace(/[\-.\s\/]/g, "");
-  const lastChar = clean.length > 0 ? clean[clean.length - 1] : "";
-
-  return {
-    isKatakana: isKat,
-    isPrefixHyphen,
-    isSuffixHyphen,
-    hasMidHyphen,
-    hasDot,
-    okuriganaSuffix,
-    lastChar,
-    cleanLength: clean.length,
-  };
-};
 
 
 const KUNYOMI_ROOTS = [
