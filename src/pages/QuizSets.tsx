@@ -1,5 +1,5 @@
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef, useEffect } from "react";
 import Quiz, { type QuizItemSource } from "../components/Quiz";
 import { ALL_KANJI, N1_KANJI, N2_KANJI, N3_KANJI, N4_KANJI, N5_KANJI } from "../lib/kanjiData.js";
 import {
@@ -107,6 +107,30 @@ const QuizSets = () => {
   const [newSetTitle, setNewSetTitle] = useState("");
   const [pendingCustomItems, setPendingCustomItems] = useState(() => getSelectedQuizItems());
   const hasPendingCustomSelection = pendingCustomItems.length > 0;
+
+  // Preserve scroll position when entering/leaving a quiz set
+  const savedScrollY = useRef(0);
+
+  const goToSet = (set: QuizSetDefinition) => {
+    savedScrollY.current = window.scrollY;
+    setActiveSet(set);
+  };
+
+  const goBackToList = () => {
+    setActiveSet(null);
+  };
+
+  // Restore scroll position whenever we return to the list view
+  useEffect(() => {
+    if (activeSet === null) {
+      const y = savedScrollY.current;
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: y, behavior: "instant" });
+      });
+    } else {
+      window.scrollTo({ top: 0, behavior: "instant" });
+    }
+  }, [activeSet]);
 
   const customSavedSets = useMemo<QuizSetDefinition[]>(() => {
     return savedSets.map((set) => ({
@@ -236,7 +260,7 @@ const QuizSets = () => {
                         </button>
                         <button
                           type="button"
-                          onClick={() => setActiveSet(set)}
+                          onClick={() => goToSet(set)}
                           className={`flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-semibold transition-colors ${set.btn}`}
                         >
                           <FontAwesomeIcon icon={faBoltLightning} />
@@ -284,7 +308,7 @@ const QuizSets = () => {
                 <div className="flex flex-col sm:flex-row gap-2 shrink-0">
                   <button
                     type="button"
-                    onClick={() => setActiveSet(set)}
+                    onClick={() => goToSet(set)}
                     className={`flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-semibold transition-colors ${set.btn}`}
                   >
                     <FontAwesomeIcon icon={faBoltLightning} />
@@ -299,12 +323,12 @@ const QuizSets = () => {
         <div className="space-y-4">
           <button
             type="button"
-            onClick={() => setActiveSet(null)}
+            onClick={goBackToList}
             className="rounded-full border border-slate-200 bg-white px-4 py-2 text-[18px] font-medium text-black transition hover:border-[#464c91] hover:bg-[#464c91] hover:text-white"
           >
             ← Back to quiz sets
           </button>
-          <Quiz title={selectedSet.name} subtitle={selectedSet.description} items={selectedSet.items} onBack={() => setActiveSet(null)} />
+          <Quiz title={selectedSet.name} subtitle={selectedSet.description} items={selectedSet.items} onBack={goBackToList} />
         </div>
       )}
     </div>

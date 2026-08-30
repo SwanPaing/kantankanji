@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef, useEffect } from "react";
 import Quiz, { type QuizItemSource } from "../components/Quiz";
 import KanjiDetailModal from "../components/KanjiDetailModal";
 import { N5_KANJI, N4_KANJI, N3_KANJI, N2_KANJI, N1_KANJI } from "../lib/kanjiData.js";
@@ -8,6 +8,7 @@ import {
   faBook,
   faChevronDown,
   faChevronRight,
+  faChevronLeft,
   faCircleCheck,
   faArrowLeft,
   faSquareCheck,
@@ -164,6 +165,32 @@ const StudyPlans = () => {
   );
   const [multiQuiz, setMultiQuiz] = useState<MultiQuizRef | null>(null);
 
+  // Preserve scroll position when entering/leaving a session
+  const savedScrollY = useRef(0);
+
+  const goToSession = (session: SessionRef) => {
+    savedScrollY.current = window.scrollY;
+    setActiveSession(session);
+  };
+
+  const goBackToList = () => {
+    setActiveSession(null);
+  };
+
+  // Restore scroll position whenever we return to the list view
+  useEffect(() => {
+    if (activeSession === null && multiQuiz === null) {
+      const y = savedScrollY.current;
+      // Use requestAnimationFrame to wait for the list to render
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: y, behavior: "instant" });
+      });
+    } else {
+      // Scroll to top when entering a session/quiz
+      window.scrollTo({ top: 0, behavior: "instant" });
+    }
+  }, [activeSession, multiQuiz]);
+
   // Precompute sessions for every level
   const sessionsByLevel = useMemo(() => {
     const map: Record<string, KanjiItem[][]> = {};
@@ -277,6 +304,7 @@ const StudyPlans = () => {
     );
   }
 
+
   // ---- Single-session quiz view ----
   if (activeSession?.quiz && currentLevel) {
     return (
@@ -314,7 +342,7 @@ const StudyPlans = () => {
         {/* Back button */}
         <button
           type="button"
-          onClick={() => setActiveSession(null)}
+          onClick={goBackToList}
           className="mb-6 rounded-full border border-slate-200 bg-white px-4 py-2 text-[18px] font-medium text-black transition hover:border-[#464c91] hover:bg-[#464c91] hover:text-white"
         >
           <FontAwesomeIcon icon={faArrowLeft} className="mr-2" />
@@ -412,6 +440,44 @@ const StudyPlans = () => {
             onClose={() => setDetailKanji(null)}
           />
         )}
+
+        {/* Prev / Next session navigation */}
+        {(() => {
+          const sessions = sessionsByLevel[activeSession.levelId] ?? [];
+          const isFirst = activeSession.sessionIndex === 0;
+          const isLast = activeSession.sessionIndex === sessions.length - 1;
+          return (
+            <div className="mt-8 flex items-center justify-between gap-4">
+              <button
+                type="button"
+                disabled={isFirst}
+                onClick={() => {
+                  window.scrollTo({ top: 0, behavior: "instant" });
+                  setActiveSession({ levelId: activeSession.levelId, sessionIndex: activeSession.sessionIndex - 1 });
+                }}
+                className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-[15px] font-medium text-black transition hover:border-[#464c91] hover:bg-[#464c91] hover:text-white disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:text-black disabled:hover:border-slate-200"
+              >
+                <FontAwesomeIcon icon={faChevronLeft} />
+                Previous session
+              </button>
+              <span className="text-sm text-slate-500">
+                {activeSession.sessionIndex + 1} / {sessions.length}
+              </span>
+              <button
+                type="button"
+                disabled={isLast}
+                onClick={() => {
+                  window.scrollTo({ top: 0, behavior: "instant" });
+                  setActiveSession({ levelId: activeSession.levelId, sessionIndex: activeSession.sessionIndex + 1 });
+                }}
+                className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-[15px] font-medium text-black transition hover:border-[#464c91] hover:bg-[#464c91] hover:text-white disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:text-black disabled:hover:border-slate-200"
+              >
+                Next session
+                <FontAwesomeIcon icon={faChevronRight} />
+              </button>
+            </div>
+          );
+        })()}
       </div>
     );
   }
@@ -517,7 +583,7 @@ const StudyPlans = () => {
                         <button
                           type="button"
                           onClick={() =>
-                            setActiveSession({
+                            goToSession({
                               levelId: level.id,
                               sessionIndex: idx,
                             })

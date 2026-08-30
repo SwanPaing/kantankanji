@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
+import { ALL_KANJI } from "../lib/kanjiData.js";
 
 export type QuizItemSource = {
   character: string;
@@ -38,24 +39,450 @@ type QuizProps = {
   onBack?: () => void;
 };
 
+// Global pools extracted once from ALL_KANJI to guarantee rich distractors
+const GLOBAL_MEANINGS_POOL = Array.from(
+  new Set(ALL_KANJI.flatMap((k) => k.meanings ?? []).filter(Boolean))
+);
+const GLOBAL_READINGS_POOL = Array.from(
+  new Set(ALL_KANJI.flatMap((k) => [...(k.onyomi ?? []), ...(k.kunyomi ?? [])]).filter(Boolean))
+);
+const GLOBAL_VOCAB_READING_POOL = Array.from(
+  new Set(
+    ALL_KANJI.flatMap((k) => k.example_words ?? [])
+      .map((w) => w.reading)
+      .filter(Boolean)
+  )
+);
+const GLOBAL_VOCAB_MEANING_POOL = Array.from(
+  new Set(
+    ALL_KANJI.flatMap((k) => k.example_words ?? [])
+      .map((w) => w.meaning)
+      .filter(Boolean)
+  )
+);
+
 const shuffle = <T,>(items: T[]) => [...items].sort(() => Math.random() - 0.5);
 
-const buildChoices = (answer: string, pool: string[]) => {
-  const uniquePool = Array.from(new Set(pool.filter(Boolean)));
-  const distractors = uniquePool.filter((value) => value.toLowerCase() !== answer.toLowerCase());
-  const options = [answer, ...shuffle(distractors).slice(0, 3)];
-  return shuffle(options);
+// Script detection helpers
+const isKatakana = (s: string) => /^[\u30A0-\u30FF\u30FC\s]+$/.test(s);
+
+type ReadingPattern = {
+  isKatakana: boolean;
+  isPrefixHyphen: boolean; // e.g. -び
+  isSuffixHyphen: boolean; // e.g. ひと-
+  hasMidHyphen: boolean;   // e.g. た-べる
+  hasDot: boolean;         // e.g. ひと.つ
+  okuriganaSuffix: string; // e.g. 'べる', 'つ', 'い'
+  lastChar: string;
+  cleanLength: number;
+};
+
+const getReadingPattern = (r: string): ReadingPattern => {
+  const isKat = isKatakana(r);
+  const isPrefixHyphen = r.startsWith("-");
+  const isSuffixHyphen = r.endsWith("-");
+  const hasMidHyphen = !isPrefixHyphen && !isSuffixHyphen && r.includes("-");
+  const hasDot = r.includes(".");
+
+  let okuriganaSuffix = "";
+  if (hasMidHyphen) {
+    const parts = r.split("-");
+    okuriganaSuffix = parts[parts.length - 1];
+  } else if (hasDot) {
+    const parts = r.split(".");
+    okuriganaSuffix = parts[parts.length - 1];
+  }
+
+  const clean = r.replace(/[\-.\s\/]/g, "");
+  const lastChar = clean.length > 0 ? clean[clean.length - 1] : "";
+
+  return {
+    isKatakana: isKat,
+    isPrefixHyphen,
+    isSuffixHyphen,
+    hasMidHyphen,
+    hasDot,
+    okuriganaSuffix,
+    lastChar,
+    cleanLength: clean.length,
+  };
+};
+
+const scoreReadingSimilarity = (targetPattern: ReadingPattern, target: string, candidate: string): number => {
+  if (candidate.toLowerCase() === target.toLowerCase()) return -99999;
+  const candPattern = getReadingPattern(candidate);
+
+  // Hard requirement 1: must match Katakana vs Hiragana
+  if (targetPattern.isKatakana !== candPattern.isKatakana) {
+    return -10000;
+  }
+
+  // Hard requirement 2: must match special character layout exactly
+  if (targetPattern.isPrefixHyphen !== candPattern.isPrefixHyphen) {
+    return -10000;
+  }
+  if (targetPattern.isSuffixHyphen !== candPattern.isSuffixHyphen) {
+    return -10000;
+  }
+  if (targetPattern.hasMidHyphen !== candPattern.hasMidHyphen) {
+    return -10000;
+  }
+  if (targetPattern.hasDot !== candPattern.hasDot) {
+    return -10000;
+  }
+
+  let score = 1000;
+
+  // Compare okurigana suffix (e.g. -る vs -る, -い vs -い, .つ vs .つ)
+  if (targetPattern.hasMidHyphen || targetPattern.hasDot) {
+    if (targetPattern.okuriganaSuffix && candPattern.okuriganaSuffix) {
+      if (targetPattern.okuriganaSuffix === candPattern.okuriganaSuffix) {
+        score += 800;
+      } else if (
+        targetPattern.okuriganaSuffix[targetPattern.okuriganaSuffix.length - 1] ===
+        candPattern.okuriganaSuffix[candPattern.okuriganaSuffix.length - 1]
+      ) {
+        score += 400;
+      }
+    }
+  }
+
+  // Same last character / coda (e.g. -ん, -う, -つ, etc.)
+  if (targetPattern.lastChar && targetPattern.lastChar === candPattern.lastChar) {
+    score += 250;
+  }
+
+  // Length difference penalty
+  const lenDiff = Math.abs(targetPattern.cleanLength - candPattern.cleanLength);
+  score -= lenDiff * 100;
+
+  return score;
+};
+
+const KUNYOMI_ROOTS = [
+  "あ", "い", "う", "え", "お",
+  "か", "き", "く", "け", "こ",
+  "さ", "し", "す", "せ", "そ",
+  "た", "ち", "つ", "て", "と",
+  "な", "に", "ぬ", "ね", "の",
+  "は", "ひ", "ふ", "へ", "ほ",
+  "ま", "み", "む", "め", "も",
+  "や", "ゆ", "よ",
+  "ら", "り", "る", "れ", "ろ",
+  "わ", "が", "ぎ", "ぐ", "げ", "ご",
+  "ざ", "じ", "ず", "ぜ", "ぞ",
+  "だ", "で", "ど",
+  "ば", "び", "ぶ", "べ", "ぼ",
+  "くら", "なら", "つら", "ひら", "あら", "から", "てら",
+  "やま", "かわ", "うみ", "もり", "はな", "みず", "つき", "ひ", "かぜ", "そら",
+  "ひと", "ふた", "みっ", "よっ", "いつ", "むっ", "なな", "やっ", "ここの", "とお"
+];
+
+const ONYOMI_ROOTS = [
+  "コウ", "ショウ", "トウ", "ソウ", "キョウ", "ジョウ", "ドウ", "ホウ", "ボウ",
+  "カン", "サン", "セン", "テン", "ゲン", "レン", "シン", "ジン", "キン", "ギン",
+  "サイ", "カイ", "タイ", "ダイ", "ライ", "バイ", "マイ",
+  "シ", "ジ", "チ", "キ", "ギ", "ニ", "ヒ", "ビ", "リ",
+  "カ", "ガ", "タ", "ダ", "ナ", "ハ", "バ", "マ", "ラ",
+  "ク", "グ", "ツ", "ド", "ブ", "プ", "フ", "ル",
+  "イチ", "ニチ", "ガク", "ロク", "ハチ", "ジュウ", "リツ", "ショク", "ブツ"
+];
+
+const ONYOMI_HIRAGANA_ROOTS = [
+  "こう", "しょう", "とう", "そう", "きょう", "じょう", "どう", "ほう", "ぼう",
+  "かん", "さん", "せん", "てん", "げん", "れん", "しん", "じん", "きん", "ぎん",
+  "さい", "かい", "たい", "だい", "らい", "ばい", "まい",
+  "し", "じ", "ち", "き", "ぎ", "に", "ひ", "び", "り",
+  "か", "が", "た", "だ", "な", "は", "ば", "ま", "ら"
+];
+
+type ReadingAffixes = {
+  isKat: boolean;
+  tildePrefix: string;
+  tildeSuffix: string;
+  isPrefixHyphen: boolean;
+  isSuffixHyphen: boolean;
+  midHyphenSuffix: string;
+  dotSuffix: string;
+  leadingKana: string;
+  trailingKana: string;
+};
+
+const extractReadingAffixes = (answer: string, questionWord = ""): ReadingAffixes => {
+  const isKat = isKatakana(answer.replace(/[~～〜\-.\s\/]/g, ""));
+
+  let tildePrefix = "";
+  if (answer.startsWith("~") || answer.startsWith("～") || answer.startsWith("〜")) {
+    tildePrefix = answer[0];
+  } else if (questionWord.startsWith("~") || questionWord.startsWith("～") || questionWord.startsWith("〜")) {
+    tildePrefix = questionWord[0];
+  }
+
+  let tildeSuffix = "";
+  if (answer.endsWith("~") || answer.endsWith("～") || answer.endsWith("〜")) {
+    tildeSuffix = answer[answer.length - 1];
+  } else if (questionWord.endsWith("~") || questionWord.endsWith("～") || questionWord.endsWith("〜")) {
+    tildeSuffix = questionWord[questionWord.length - 1];
+  }
+
+  const isPrefixHyphen = answer.startsWith("-");
+  const isSuffixHyphen = answer.endsWith("-");
+  const hasMidHyphen = !isPrefixHyphen && !isSuffixHyphen && answer.includes("-");
+  const hasDot = answer.includes(".");
+
+  let midHyphenSuffix = "";
+  if (hasMidHyphen) {
+    midHyphenSuffix = answer.substring(answer.lastIndexOf("-")); // e.g. '-べる'
+  }
+  let dotSuffix = "";
+  if (hasDot) {
+    dotSuffix = answer.substring(answer.lastIndexOf(".")); // e.g. '.つ'
+  }
+
+  let leadingKana = "";
+  let trailingKana = "";
+
+  if (questionWord && !hasMidHyphen && !hasDot && !isPrefixHyphen && !isSuffixHyphen) {
+    const cleanWord = questionWord.replace(/^[~～〜]/, "").replace(/[~～〜]$/, "");
+    const cleanAns = answer.replace(/^[~～〜]/, "").replace(/[~～〜]$/, "");
+
+    const leadMatch = cleanWord.match(/^[\u3040-\u309F\u30A0-\u30FF]+/);
+    if (leadMatch && cleanAns.startsWith(leadMatch[0])) {
+      leadingKana = leadMatch[0];
+    }
+
+    const trailMatch = cleanWord.match(/[\u3040-\u309F\u30A0-\u30FF]+$/);
+    if (trailMatch && cleanAns.endsWith(trailMatch[0])) {
+      trailingKana = trailMatch[0];
+    }
+  }
+
+  return {
+    isKat,
+    tildePrefix,
+    tildeSuffix,
+    isPrefixHyphen,
+    isSuffixHyphen,
+    midHyphenSuffix,
+    dotSuffix,
+    leadingKana,
+    trailingKana,
+  };
+};
+
+const buildSmartReadingChoices = (
+  answer: string,
+  localPool: string[],
+  globalPool: string[],
+  questionWord = ""
+): string[] => {
+  const aff = extractReadingAffixes(answer, questionWord);
+  const choices = new Set<string>([answer]);
+
+  const applyTemplate = (stem: string): string | null => {
+    let cleanStem = stem.replace(/^[~～〜\-.\s\/]+/, "").replace(/[~～〜\-.\s\/]+$/, "");
+    if (aff.leadingKana && cleanStem.startsWith(aff.leadingKana)) {
+      cleanStem = cleanStem.slice(aff.leadingKana.length);
+    }
+    if (aff.trailingKana && cleanStem.endsWith(aff.trailingKana)) {
+      cleanStem = cleanStem.slice(0, cleanStem.length - aff.trailingKana.length);
+    }
+    if (aff.midHyphenSuffix && cleanStem.endsWith(aff.midHyphenSuffix.replace(/^-/, ""))) {
+      cleanStem = cleanStem.slice(0, cleanStem.length - aff.midHyphenSuffix.length + 1);
+    }
+    if (aff.dotSuffix && cleanStem.endsWith(aff.dotSuffix.replace(/^\./, ""))) {
+      cleanStem = cleanStem.slice(0, cleanStem.length - aff.dotSuffix.length + 1);
+    }
+    if (!cleanStem) return null;
+
+    if (aff.isPrefixHyphen) return `-${cleanStem}`;
+    if (aff.isSuffixHyphen) return `${cleanStem}-`;
+    if (aff.midHyphenSuffix) return `${cleanStem}${aff.midHyphenSuffix}`;
+    if (aff.dotSuffix) return `${cleanStem}${aff.dotSuffix}`;
+
+    let res = cleanStem;
+    if (aff.leadingKana) res = `${aff.leadingKana}${res}`;
+    if (aff.trailingKana) res = `${res}${aff.trailingKana}`;
+    if (aff.tildePrefix) res = `${aff.tildePrefix}${res}`;
+    if (aff.tildeSuffix) res = `${res}${aff.tildeSuffix}`;
+    return res;
+  };
+
+  const pool = Array.from(new Set([...localPool, ...globalPool].filter(Boolean)));
+
+  // Step 1: Natural exact matches from pool that already share the exact pattern
+  const naturalMatches = pool.filter((cand) => {
+    if (cand.toLowerCase() === answer.toLowerCase()) return false;
+    const candAff = extractReadingAffixes(cand, "");
+    if (aff.isKat !== candAff.isKat) return false;
+    if (aff.tildePrefix && aff.tildePrefix !== candAff.tildePrefix) return false;
+    if (aff.tildeSuffix && aff.tildeSuffix !== candAff.tildeSuffix) return false;
+    if (aff.isPrefixHyphen !== candAff.isPrefixHyphen) return false;
+    if (aff.isSuffixHyphen !== candAff.isSuffixHyphen) return false;
+    if (aff.midHyphenSuffix && aff.midHyphenSuffix !== candAff.midHyphenSuffix) return false;
+    if (aff.dotSuffix && aff.dotSuffix !== candAff.dotSuffix) return false;
+    if (aff.leadingKana && !cand.startsWith(aff.leadingKana)) return false;
+    if (aff.trailingKana && !cand.endsWith(aff.trailingKana)) return false;
+    return true;
+  });
+
+  for (const match of shuffle(naturalMatches)) {
+    choices.add(match);
+    if (choices.size >= 4) break;
+  }
+
+  // Step 2: Pool items adapted with template (for vocab readings / tildes)
+  if (choices.size < 4 && !aff.midHyphenSuffix && !aff.dotSuffix && !aff.isPrefixHyphen && !aff.isSuffixHyphen) {
+    for (const cand of shuffle(pool)) {
+      if (cand.toLowerCase() === answer.toLowerCase()) continue;
+      const formatted = applyTemplate(cand);
+      if (formatted && formatted.toLowerCase() !== answer.toLowerCase() && !choices.has(formatted)) {
+        if (aff.isKat === isKatakana(formatted.replace(/[~～〜\-.\s\/]/g, ""))) {
+          choices.add(formatted);
+          if (choices.size >= 4) break;
+        }
+      }
+    }
+  }
+
+  // Step 3: High-quality synthetic roots fallback
+  if (choices.size < 4) {
+    const roots = aff.isKat ? ONYOMI_ROOTS : aff.tildeSuffix ? ONYOMI_HIRAGANA_ROOTS : KUNYOMI_ROOTS;
+    for (const root of shuffle(roots)) {
+      const formatted = applyTemplate(root);
+      if (formatted && formatted.toLowerCase() !== answer.toLowerCase() && !choices.has(formatted)) {
+        choices.add(formatted);
+        if (choices.size >= 4) break;
+      }
+    }
+  }
+
+  return shuffle(Array.from(choices));
+};
+
+type MeaningAffixes = {
+  tildePrefix: string;
+  tildeSuffix: string;
+  dotsPrefix: string;
+  dotsSuffix: string;
+  counterPrefix: string;
+  isVerb: boolean;
+};
+
+const extractMeaningAffixes = (answer: string): MeaningAffixes => {
+  const trimmed = answer.trim();
+
+  let tildePrefix = "";
+  if (trimmed.startsWith("~ ") || trimmed.startsWith("～ ")) {
+    tildePrefix = trimmed.slice(0, 2);
+  } else if (trimmed.startsWith("~") || trimmed.startsWith("～") || trimmed.startsWith("〜")) {
+    tildePrefix = trimmed[0];
+  }
+
+  let tildeSuffix = "";
+  if (trimmed.endsWith(" ~") || trimmed.endsWith(" ～")) {
+    tildeSuffix = trimmed.slice(-2);
+  } else if (trimmed.endsWith("~") || trimmed.endsWith("～") || trimmed.endsWith("〜")) {
+    tildeSuffix = trimmed[trimmed.length - 1];
+  }
+
+  const dotsPrefix = trimmed.startsWith("...") ? "..." : "";
+  const dotsSuffix = trimmed.endsWith("...") ? "..." : "";
+
+  let counterPrefix = "";
+  if (trimmed.toLowerCase().startsWith("counter for ")) {
+    counterPrefix = "counter for ";
+  } else if (trimmed.toLowerCase().startsWith("counter of ")) {
+    counterPrefix = "counter of ";
+  }
+
+  return {
+    tildePrefix,
+    tildeSuffix,
+    dotsPrefix,
+    dotsSuffix,
+    counterPrefix,
+    isVerb: trimmed.toLowerCase().startsWith("to "),
+  };
+};
+
+const buildSmartMeaningChoices = (
+  answer: string,
+  localPool: string[],
+  globalPool: string[]
+): string[] => {
+  const aff = extractMeaningAffixes(answer);
+  const choices = new Set<string>([answer]);
+
+  const applyTemplate = (cand: string): string | null => {
+    let clean = cand
+      .trim()
+      .replace(/^[~～〜\s\.]+/, "")
+      .replace(/[~～〜\s\.]+$/, "")
+      .replace(/^counter (for|of)\s+/i, "");
+
+    if (aff.isVerb && !clean.toLowerCase().startsWith("to ")) {
+      clean = `to ${clean}`;
+    } else if (!aff.isVerb && clean.toLowerCase().startsWith("to ")) {
+      clean = clean.slice(3);
+    }
+
+    if (!clean) return null;
+
+    let res = clean;
+    if (aff.counterPrefix) res = `${aff.counterPrefix}${res}`;
+    if (aff.dotsPrefix) res = `${aff.dotsPrefix}${res}`;
+    if (aff.dotsSuffix) res = `${res}${aff.dotsSuffix}`;
+    if (aff.tildePrefix) res = `${aff.tildePrefix}${res}`;
+    if (aff.tildeSuffix) res = `${res}${aff.tildeSuffix}`;
+
+    return res;
+  };
+
+  const pool = Array.from(new Set([...localPool, ...globalPool].filter(Boolean)));
+
+  // Try natural matches first
+  const naturalMatches = pool.filter((cand) => {
+    if (cand.toLowerCase() === answer.toLowerCase()) return false;
+    const candAff = extractMeaningAffixes(cand);
+    if (aff.tildePrefix && !candAff.tildePrefix) return false;
+    if (aff.tildeSuffix && !candAff.tildeSuffix) return false;
+    if (aff.dotsPrefix && !candAff.dotsPrefix) return false;
+    if (aff.dotsSuffix && !candAff.dotsSuffix) return false;
+    if (aff.counterPrefix && !candAff.counterPrefix) return false;
+    if (aff.isVerb !== candAff.isVerb) return false;
+    return true;
+  });
+
+  for (const match of shuffle(naturalMatches)) {
+    choices.add(match);
+    if (choices.size >= 4) break;
+  }
+
+  // Format pool items if needed
+  if (choices.size < 4) {
+    for (const cand of shuffle(pool)) {
+      if (cand.toLowerCase() === answer.toLowerCase()) continue;
+      const formatted = applyTemplate(cand);
+      if (formatted && formatted.toLowerCase() !== answer.toLowerCase() && !choices.has(formatted)) {
+        choices.add(formatted);
+        if (choices.size >= 4) break;
+      }
+    }
+  }
+
+  return shuffle(Array.from(choices));
 };
 
 const buildQuestions = (items: QuizItemSource[], settings: QuizSettings, quizVersion = 0): QuizQuestion[] => {
   const shuffledItems = shuffle(items);
   const questions: QuizQuestion[] = [];
 
-  // Build distractor pools from ALL items (not just selected) for better variety
-  const allMeaningsPool = items.flatMap((entry) => entry.meanings ?? []);
-  const allReadingsPool = items.flatMap((entry) => [...(entry.onyomi ?? []), ...(entry.kunyomi ?? [])]);
-  const allVocabReadingPool = items.flatMap((entry) => entry.example_words ?? []).map((w) => w.reading);
-  const allVocabMeaningPool = items.flatMap((entry) => entry.example_words ?? []).map((w) => w.meaning);
+  // Local distractor pools from current session/quiz items
+  const localMeaningsPool = items.flatMap((entry) => entry.meanings ?? []);
+  const localReadingsPool = items.flatMap((entry) => [...(entry.onyomi ?? []), ...(entry.kunyomi ?? [])]);
+  const localVocabReadingPool = items.flatMap((entry) => entry.example_words ?? []).map((w) => w.reading);
+  const localVocabMeaningPool = items.flatMap((entry) => entry.example_words ?? []).map((w) => w.meaning);
 
   const wantKanji = settings.contentMode === "kanji" || settings.contentMode === "mixed";
   const wantVocab = settings.contentMode === "vocabulary" || settings.contentMode === "mixed";
@@ -74,7 +501,7 @@ const buildQuestions = (items: QuizItemSource[], settings: QuizSettings, quizVer
           id: `${item.character}-${index}-kanji-meaning`,
           prompt: "What does this kanji mean?",
           question: item.character,
-          options: buildChoices(answer, allMeaningsPool),
+          options: buildSmartMeaningChoices(answer, localMeaningsPool, GLOBAL_MEANINGS_POOL),
           answer,
           explanation: `${item.character} commonly means ${answer}.`,
           type: "kanji",
@@ -93,7 +520,7 @@ const buildQuestions = (items: QuizItemSource[], settings: QuizSettings, quizVer
               id: `${item.character}-${index}-kanji-reading-${ri}`,
               prompt: isOn ? "What is the on'yomi of this kanji?" : "What is the kun'yomi of this kanji?",
               question: item.character,
-              options: buildChoices(reading, allReadingsPool),
+              options: buildSmartReadingChoices(reading, localReadingsPool, GLOBAL_READINGS_POOL),
               answer: reading,
               explanation: `${item.character} can be read as ${reading} (${isOn ? "on'yomi" : "kun'yomi"}).`,
               type: "kanji",
@@ -107,7 +534,7 @@ const buildQuestions = (items: QuizItemSource[], settings: QuizSettings, quizVer
             id: `${item.character}-${index}-kanji-reading-fallback`,
             prompt: "How do you read this kanji?",
             question: item.character,
-            options: buildChoices(answer, allReadingsPool),
+            options: buildSmartReadingChoices(answer, localReadingsPool, GLOBAL_READINGS_POOL),
             answer,
             explanation: `${item.character} — ${answer}.`,
             type: "kanji",
@@ -128,7 +555,7 @@ const buildQuestions = (items: QuizItemSource[], settings: QuizSettings, quizVer
             id: `${item.character}-${index}-vocab-meaning-${wi}`,
             prompt: "What does this vocabulary word mean?",
             question: vocab.word,
-            options: buildChoices(vocab.meaning, allVocabMeaningPool),
+            options: buildSmartMeaningChoices(vocab.meaning, localVocabMeaningPool, GLOBAL_VOCAB_MEANING_POOL),
             answer: vocab.meaning,
             explanation: `${vocab.word} (${vocab.reading}) means ${vocab.meaning}.`,
             type: "vocabulary",
@@ -141,7 +568,7 @@ const buildQuestions = (items: QuizItemSource[], settings: QuizSettings, quizVer
             id: `${item.character}-${index}-vocab-reading-${wi}`,
             prompt: "How do you read this vocabulary word?",
             question: vocab.word,
-            options: buildChoices(vocab.reading, allVocabReadingPool),
+            options: buildSmartReadingChoices(vocab.reading, localVocabReadingPool, GLOBAL_VOCAB_READING_POOL, vocab.word),
             answer: vocab.reading,
             explanation: `${vocab.word} (${vocab.meaning}) is read as ${vocab.reading}.`,
             type: "vocabulary",
