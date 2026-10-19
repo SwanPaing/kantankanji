@@ -23,7 +23,7 @@ const Nav = () => {
       <div className="px-3 sm:px-4 lg:px-6 py-3">
         <div className="flex items-center justify-between gap-3">
           <Link to="/" className="text-3xl font-bold tracking-widest text-black">
-            漢
+            <img src="/klogo.png" alt="漢" className="w-10 h-10"/>
           </Link>
 
 
